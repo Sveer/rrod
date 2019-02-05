@@ -27,7 +27,8 @@ namespace OrleansHost
         private static async Task Main(string[] args)
         {
             var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
-
+            var invariant = "System.Data.SqlClient"; // for Microsoft SQL Server
+            //var connectionString = "Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=Orleans;Integrated Security=True;Pooling=False;Max Pool Size=200;Asynchronous Processing=True;MultipleActiveResultSets=True";
             ISiloHost silo;
             try
             {
@@ -59,18 +60,28 @@ namespace OrleansHost
                             .AddEnvironmentVariables("RROD_");                  // can override all settings (i.e. URLS) by passing an environment variable
                     })
                     .AddStartupTask<SettingsLogger>()
-                    .UseAzureStorageClustering(builder => builder.Configure((AzureStorageClusteringOptions options, IConfiguration cfg) => options.ConnectionString = cfg.GetConnectionString("DataConnectionString")))
+                    //Испольузем  в качестве кластера SQL Server
+                    .UseAdoNetClustering(builder => builder.Configure((AdoNetClusteringSiloOptions options, IConfiguration cfg) =>
+                    {
+                        options.ConnectionString = cfg.GetConnectionString("AdoNetConnectionString");
+                    }))
+                    //Prev 4 use Azure - Для использоания Azure
+                    //.UseAzureStorageClustering(builder => builder.Configure((AzureStorageClusteringOptions options, IConfiguration cfg) => options.ConnectionString = cfg.GetConnectionString("DataConnectionString")))
+                    
                     .ConfigureEndpoints(siloPort: 11111, gatewayPort: 30000)
                     .ConfigureServices((context, services) =>
                     {
                         var config = context.Configuration;
 
-                        var dataConnectionString = config.GetConnectionString("DataConnectionString");
+                        var dataConnectionString = config.GetConnectionString("DataConnectionString"); //Для Azure
                         var reduxConnectionString = config.GetConnectionString("ReduxConnectionString");
+                        var adoNetConnectionString = config.GetConnectionString("AdoNetConnectionString"); //Для SQL
 
                         services.AddOptions();
                         services.Configure<ClusterOptions>(config);
-                        services.UseAzureTableReminderService(options => options.ConnectionString = dataConnectionString);
+                       
+                       
+                    //    services.UseAzureTableReminderService(options => options.ConnectionString = dataConnectionString);
                         services.AddSingleton(new ReduxTableStorage<CertState>(reduxConnectionString));
                         services.AddSingleton(new ReduxTableStorage<UserState>(reduxConnectionString));
                         services.AddSingleton(new ReduxTableStorage<CounterState>(reduxConnectionString));
@@ -81,10 +92,33 @@ namespace OrleansHost
                         parts.AddApplicationPart(typeof(CounterGrain).Assembly).WithReferences();
                         parts.AddApplicationPart(typeof(AzureQueueDataAdapterV2).Assembly).WithReferences();
                     })
-                    .AddAzureTableGrainStorageAsDefault(builder => builder.Configure((AzureTableStorageOptions options, IConfiguration cfg) => options.ConnectionString = cfg.GetConnectionString("DataConnectionString")))
-                    .AddAzureTableGrainStorage("PubSubStore", builder => builder.Configure((AzureTableStorageOptions options, IConfiguration cfg) => options.ConnectionString = cfg.GetConnectionString("DataConnectionString")))
-                    .AddAzureQueueStreams<AzureQueueDataAdapterV2>("Default", builder => builder.Configure((AzureQueueOptions options, IConfiguration cfg) => options.ConnectionString = cfg.GetConnectionString("DataConnectionString"))
-                    )
+                     .AddAdoNetGrainStorageAsDefault(builder => builder.Configure((AdoNetGrainStorageOptions options, IConfiguration cfg) =>
+                     {
+                         options.ConnectionString = cfg.GetConnectionString("AdoNetConnectionString");
+                     }))
+                    .AddAdoNetGrainStorage("PubSubStore", builder => builder.Configure((AdoNetGrainStorageOptions options, IConfiguration cfg) =>
+                    {
+                        options.ConnectionString = cfg.GetConnectionString("AdoNetConnectionString");
+                    }))
+                    .UseAdoNetReminderService(builder => builder.Configure((AdoNetReminderTableOptions options, IConfiguration cfg) =>
+                    {
+                        options.ConnectionString = cfg.GetConnectionString("AdoNetConnectionString");
+                    }))
+                    .AddSimpleMessageStreamProvider("Default", builder => builder.Configure((SimpleMessageStreamProviderOptions  options, IConfiguration cfg) =>
+                    {
+                        options.FireAndForgetDelivery = true;
+                        options.OptimizeForImmutableData = true;
+                        options.PubSubType = Orleans.Streams.StreamPubSubType.ExplicitGrainBasedAndImplicit;
+                     //   cfg.GetSection("AdoNetConnectionString").Bind(options);
+                    }))
+
+
+                    //.AddRe
+                    //Меняем на Redis
+                    //  .AddAzureTableGrainStorageAsDefault(builder => builder.Configure((AzureTableStorageOptions options, IConfiguration cfg) => options.ConnectionString = cfg.GetConnectionString("DataConnectionString")))
+                    // .AddAzureTableGrainStorage("PubSubStore", builder => builder.Configure((AzureTableStorageOptions options, IConfiguration cfg) => options.ConnectionString = cfg.GetConnectionString("DataConnectionString")))
+                    // .AddAzureQueueStreams<AzureQueueDataAdapterV2>("Default", builder => builder.Configure((AzureQueueOptions options, IConfiguration cfg) => options.ConnectionString = cfg.GetConnectionString("DataConnectionString"))
+                    //)
                     .Build();
             }
             catch (Exception e)

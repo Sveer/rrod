@@ -1,5 +1,6 @@
 {
   "ConnectionStrings": {
+    "AdoNetConnectionString": ".\SQLExpress",
     "DataConnectionString": "UseDevelopmentStorage=true",
     "ReduxConnectionString": "UseDevelopmentStorage=true",
     "SmtpConnectionString": "Host=smtp.sendgrid.net;UserName=[YOUR_USERNAME];Password=[YOUR PASSWORD]"
