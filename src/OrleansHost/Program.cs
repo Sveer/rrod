@@ -17,6 +17,8 @@ using System.Threading.Tasks;
 using Orleans.Runtime;
 using Orleans.Providers.Streams.AzureQueue;
 using Orleans.Configuration;
+using System.Data.SqlClient;
+using System.Data.Common;
 
 namespace OrleansHost
 {
@@ -27,8 +29,7 @@ namespace OrleansHost
         private static async Task Main(string[] args)
         {
             var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
-            var invariant = "System.Data.SqlClient"; // for Microsoft SQL Server
-            //var connectionString = "Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=Orleans;Integrated Security=True;Pooling=False;Max Pool Size=200;Asynchronous Processing=True;MultipleActiveResultSets=True";
+            string connectionString=null;
             ISiloHost silo;
             try
             {
@@ -63,7 +64,13 @@ namespace OrleansHost
                     //Испольузем  в качестве кластера SQL Server
                     .UseAdoNetClustering(builder => builder.Configure((AdoNetClusteringSiloOptions options, IConfiguration cfg) =>
                     {
+                        if (!CheckDBInit(cfg.GetConnectionString("AdoNetConnectionString")))
+                        {
+                            InitDB(cfg.GetConnectionString("AdoNetConnectionString"));
+                        }
                         options.ConnectionString = cfg.GetConnectionString("AdoNetConnectionString");
+                        options.Invariant = cfg.GetValue<string>("SQLProvider");
+
                     }))
                     //Prev 4 use Azure - Для использоания Azure
                     //.UseAzureStorageClustering(builder => builder.Configure((AzureStorageClusteringOptions options, IConfiguration cfg) => options.ConnectionString = cfg.GetConnectionString("DataConnectionString")))
@@ -94,15 +101,23 @@ namespace OrleansHost
                     })
                      .AddAdoNetGrainStorageAsDefault(builder => builder.Configure((AdoNetGrainStorageOptions options, IConfiguration cfg) =>
                      {
+                         connectionString = cfg.GetConnectionString("AdoNetConnectionString");
                          options.ConnectionString = cfg.GetConnectionString("AdoNetConnectionString");
+                         options.Invariant = cfg.GetValue<string>("SQLProvider"); //Провайдер
+
                      }))
                     .AddAdoNetGrainStorage("PubSubStore", builder => builder.Configure((AdoNetGrainStorageOptions options, IConfiguration cfg) =>
                     {
                         options.ConnectionString = cfg.GetConnectionString("AdoNetConnectionString");
+                        options.Invariant = cfg.GetValue<string>("SQLProvider"); //Провайдер
+
+
                     }))
                     .UseAdoNetReminderService(builder => builder.Configure((AdoNetReminderTableOptions options, IConfiguration cfg) =>
                     {
                         options.ConnectionString = cfg.GetConnectionString("AdoNetConnectionString");
+                        options.Invariant = cfg.GetValue<string>("SQLProvider");//Провайдер
+
                     }))
                     .AddSimpleMessageStreamProvider("Default", builder => builder.Configure((SimpleMessageStreamProviderOptions  options, IConfiguration cfg) =>
                     {
@@ -151,8 +166,19 @@ namespace OrleansHost
                 await silo.StopAsync();
                 Console.WriteLine("Silo Stopped");
             }
+            catch (SqlException e)
+            {
+                //Инициализация БД
+            
+
+
+            }
             catch (OrleansLifecycleCanceledException e)
             {
+                if (e.InnerException is SqlException && ((SqlException)e.InnerException).Number == 208) //Error DB Not init
+                {
+                    Console.WriteLine("DataBase Not initialised...");
+                }
                 Console.WriteLine("Silo could not be started with exception: " + e.InnerException.Message);
             }
             catch (Exception e)
@@ -160,7 +186,46 @@ namespace OrleansHost
                 Console.WriteLine("Silo could not be started with exception: " + e.Message);
             }
         }
+
+        static bool CheckDBInit(string connectionString)
+        {
+            SqlClientFactory newFactory = SqlClientFactory.Instance;
+
+            SqlConnection sqlConnection = new SqlConnection(connectionString);
+            sqlConnection.Open();
+            DbCommand cmd = newFactory.CreateCommand();
+            //MSSQL, Pstrgre и MySQL
+            cmd.CommandText = "select case when exists((select* from information_schema.tables where table_name = 'OrleansQuery')) then 1 else 0 end";
+            cmd.Connection = sqlConnection;
+            var res = (int)cmd.ExecuteScalar();
+            return res == 1;
+
+        }
+        static bool InitDB(string connectionString)
+        {
+            SqlClientFactory newFactory = SqlClientFactory.Instance;
+
+            SqlConnection sqlConnection = new SqlConnection(connectionString);
+            sqlConnection.Open();
+            if (!Directory.Exists("OrleansAdoNetContent\\SQLServer"))
+            {
+                return false;
+            };
+            //xxx-Main should be the first :)
+            foreach (var scriptFile in Directory.GetFiles("OrleansAdoNetContent\\SQLServer", "*.sql").OrderByDescending(c=>c.Contains("Main")))  
+            {
+                DbCommand cmd = newFactory.CreateCommand();
+                cmd.CommandText = File.ReadAllText(scriptFile);
+                cmd.Connection = sqlConnection;
+                cmd.ExecuteNonQuery();
+            }
+            sqlConnection.Close();
+
+            return true;
+        }
     }
+
+   
 
     class SettingsLogger : IStartupTask
     {

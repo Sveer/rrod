@@ -27,6 +27,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="OrleansAdoNetContent\SQLServer\SQLServer-Clustering.sql">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="OrleansAdoNetContent\SQLServer\SQLServer-Main.sql">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="OrleansAdoNetContent\SQLServer\SQLServer-Persistence.sql">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="OrleansAdoNetContent\SQLServer\SQLServer-Reminders.sql">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="OrleansHost.settings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
